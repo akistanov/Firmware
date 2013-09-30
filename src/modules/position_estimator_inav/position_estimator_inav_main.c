@@ -270,6 +270,8 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 	hrt_abstime ref_xy_init_start = 0;
 	const hrt_abstime ref_xy_init_delay = 5000000;	// wait for 5s after 3D fix
 
+	bool flow_position_valid = false;
+
 	hrt_abstime t_prev = 0;
 
 	uint16_t accel_updates = 0;
@@ -389,6 +391,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 			}
 
 			/* optical flow */
+            flow_position_valid = false;
 			if (fds[5].revents & POLLIN) {
 				orb_copy(ORB_ID(optical_flow), optical_flow_sub, &flow);
 
@@ -420,6 +423,16 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 
 				} else {
 					sonar_corr = 0.0f;
+				}
+
+				flow_position_valid = true;
+				if (flow.ground_distance_m > 0.31f && flow.ground_distance_m < 4.0f) {
+					flow_corr[0] = flow.flow_comp_x_m - x_est[1];
+					flow_corr[1] = flow.flow_comp_y_m - y_est[1];
+				} else {
+					// if ground distance inappropriate then can't use flow compensated values.
+					flow_corr[0] = 0.0f;
+					flow_corr[1] = 0.0f;
 				}
 
 				flow_updates++;
@@ -514,11 +527,10 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 		inertial_filter_correct(accel_corr[2], dt, z_est, 2, params.w_alt_acc);
 
 		bool gps_valid = ref_xy_inited && gps.fix_type >= 3 && t < gps.timestamp_position + gps_timeout;
-		bool flow_valid = false;	// TODO implement opt flow
 
 		/* try to estimate xy even if no absolute position source available,
 		 * if using optical flow velocity will be correct in this case */
-		bool can_estimate_xy = gps_valid || flow_valid;
+		bool can_estimate_xy = gps_valid || flow_position_valid;
 
 		if (can_estimate_xy) {
 			/* inertial filter prediction for position */
@@ -537,6 +549,11 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 					inertial_filter_correct(gps_corr[0][1], dt, x_est, 1, params.w_pos_gps_v);
 					inertial_filter_correct(gps_corr[1][1], dt, y_est, 1, params.w_pos_gps_v);
 				}
+			}
+
+			if (flow_position_valid) {
+				inertial_filter_correct(flow_corr[0], dt, x_est, 1, params.w_pos_flow);
+				inertial_filter_correct(flow_corr[1], dt, y_est, 1, params.w_pos_flow);
 			}
 		}
 
@@ -595,7 +612,7 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 			pub_last = t;
 			/* publish local position */
 			local_pos.timestamp = t;
-			local_pos.xy_valid = can_estimate_xy && gps_valid;
+			local_pos.xy_valid = can_estimate_xy && (gps_valid || flow_position_valid);
 			local_pos.v_xy_valid = can_estimate_xy;
 			local_pos.xy_global = local_pos.xy_valid && gps_valid;	// will make sense when local position sources (e.g. vicon) will be implemented
 			local_pos.x = x_est[0];
