@@ -70,11 +70,13 @@ char  NMEA::read_char()
 		return 0;
 	}
 
-	if (*(++_parse_pos) == ',') {
+	_parse_pos++;
+
+	if (*(_parse_pos) == ',' || *(_parse_pos) == '*') {
 		return '?';
 	}
 
-	return *_parse_pos;
+	return *(_parse_pos++);
 }
 
 int32_t  NMEA::read_int()
@@ -83,7 +85,9 @@ int32_t  NMEA::read_int()
 		return 0;
 	}
 
-	if (*(++_parse_pos) == ',') {
+	_parse_pos++;
+
+	if (*(_parse_pos) == ',' || *(_parse_pos) == '*') {
 		return 0;
 	}
 
@@ -122,10 +126,6 @@ double  NMEA::read_float()
 		return 0.0;
 	}
 
-	if (*(++_parse_pos) == ',') {
-		return 0.0;
-	}
-
 	double f = 0.0, div = 1.0;
 	int32_t d_int;
 	int8_t n = 0, isneg = 0;
@@ -138,6 +138,10 @@ double  NMEA::read_float()
 	d_int = read_int();
 
 	if (_parse_error) {
+		return 0.0;
+	}
+
+	if (*(_parse_pos) == ',' || *(_parse_pos) == '*') {
 		return 0.0;
 	}
 
@@ -179,6 +183,8 @@ int NMEA::handle_message(int len)
 
 	_parse_pos = (char *)(_rx_buffer + 6);
 	_parse_error = false;
+
+	//warnx((char *)_rx_buffer);
 
 	if ((memcmp(_rx_buffer + 3, "GGA,", 3) == 0) && (commas_count == 14)) {
 		/*
@@ -252,6 +258,9 @@ int NMEA::handle_message(int len)
 		_gps_position->lat = (int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0) * 10000000;
 		_gps_position->lon = (int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0) * 10000000;
 		_gps_position->alt = alt * 1000;
+		//warnx((char *)_rx_buffer);
+		//warnx("lat: %d, lon: %d", _gps_position->lat, _gps_position->lon);
+
 		_rate_count_lat_lon++;
 
 		if ((lat == 0.0) && (lon == 0.0) && (alt = 0.0)) {
@@ -265,6 +274,7 @@ int NMEA::handle_message(int len)
 		_gps_position->epv_m = hdop * 1.5; //Just to work (empirical);
 		_gps_position->timestamp_position = hrt_absolute_time();
 
+		//warnx("lat: %d, lon: %d", _gps_position->lat, _gps_position->lon);
 		return 1;
 
 	} else if ((memcmp(_rx_buffer + 3, "GST,", 3) == 0) && (commas_count == 8)) {
@@ -349,13 +359,14 @@ int NMEA::handle_message(int len)
 		}
 
 		double track_rad = track_true * M_PI / 180.0;
-		double tan_C = tan(track_rad);
-		double lat_ = sqrt(ground_speed * ground_speed / (1 + tan_C)); //km/hour
-		double lon_ = lat_ * tan_C; //                        //km/hour
 
-		_gps_position->vel_m_s = ground_speed * 1000 / 3600;                                  /**< GPS ground speed (m/s) */
-		_gps_position->vel_n_m_s = lat_  * 1000 / 3600;                                /**< GPS ground speed in m/s */
-		_gps_position->vel_e_m_s = lon_  * 1000 / 3600;                                /**< GPS ground speed in m/s */
+		double velocity_ms = ground_speed  / 3.6;
+		double velocity_north = velocity_ms * cos(track_rad);
+		double velocity_east  = velocity_ms * sin(track_rad);
+
+		_gps_position->vel_m_s = velocity_ms;                                  /**< GPS ground speed (m/s) */
+		_gps_position->vel_n_m_s = velocity_north;                                /**< GPS ground speed in m/s */
+		_gps_position->vel_e_m_s = velocity_east;                                /**< GPS ground speed in m/s */
 		_gps_position->vel_d_m_s = 0;                                /**< GPS ground speed in m/s */
 		_gps_position->cog_rad = track_rad;                                  /**< Course over ground (NOT heading, but direction of movement) in rad, -PI..PI */
 		_gps_position->vel_ned_valid = true;                             /**< Flag to indicate if NED speed is valid */
@@ -534,7 +545,7 @@ int NMEA::receive(unsigned timeout)
 			if ((l = parse_char(buf[j])) > 0) {
 				/* return to configure during configuration or to the gps driver during normal work
 				 * if a packet has arrived */
-				if (handle_message(l) > 0)
+				if (handle_message(l) >= 0)
 					return 1;
 			}
 
@@ -642,13 +653,8 @@ void NMEA::decode_init(void)
 
 int NMEA::configure(unsigned &baudrate)
 {
-	/* try different baudrates */
-	const unsigned baudrates_to_try[] = {9600, 38400, 19200, 57600, 115200};
-
-	for (int baud_i = 0; baud_i < sizeof(baudrates_to_try) / sizeof(baudrates_to_try[0]); baud_i++) {
-		baudrate = baudrates_to_try[baud_i];
-		set_baudrate(_fd, baudrate);
-	}
+	baudrate = 38400;
+	set_baudrate(_fd, baudrate);
 
 	return 0;
 }

@@ -273,14 +273,17 @@ GPS::task_main()
 
 		switch (_mode) {
 		case GPS_DRIVER_MODE_UBX:
+			warnx("trying ubx");
 			_Helper = new UBX(_serial_fd, &_report);
 			break;
 
 		case GPS_DRIVER_MODE_MTK:
+			warnx("trying mtk");
 			_Helper = new MTK(_serial_fd, &_report);
 			break;
 
 		case GPS_DRIVER_MODE_NMEA:
+			warnx("trying nmea");
 			_Helper = new NMEA(_serial_fd, &_report);
 			break;
 
@@ -330,7 +333,7 @@ GPS::task_main()
 						break;
 
 					case GPS_DRIVER_MODE_NMEA:
-						mode_str = "MTK";
+						mode_str = "NMEA";
 						break;
 
 					default:
@@ -349,6 +352,8 @@ GPS::task_main()
 			}
 
 			lock();
+		} else {
+			warnx("failed to configure baud rate");
 		}
 
 		lock();
