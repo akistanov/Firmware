@@ -263,18 +263,69 @@ int NMEA::handle_message(int len)
 
 		_rate_count_lat_lon++;
 
-		if ((lat == 0.0) && (lon == 0.0) && (alt = 0.0)) {
-			_gps_position->fix_type = 0;
-
-		} else {
-			_gps_position->fix_type = 3;
-		}
-
 		_gps_position->eph_m = hdop;
-		_gps_position->epv_m = hdop * 1.5; //Just to work (empirical);
 		_gps_position->timestamp_position = hrt_absolute_time();
 
 		//warnx("lat: %d, lon: %d", _gps_position->lat, _gps_position->lon);
+		return 1;
+
+	} else if ((memcmp(_rx_buffer + 3, "GSA,", 3) == 0) && (commas_count == 17)) {
+		/*
+		  GSA - GPS DOP and active satellites. This sentence provides details on the nature of the fix. It includes the numbers of the satellites
+		  being used in the current solution and the DOP. DOP (dilution of precision) is an indication of the effect of satellite geometry
+		  on the accuracy of the fix. It is a unitless number where smaller is better. For 3D fixes using 4 satellites a 1.0 would be considered
+		  to be a perfect number, however for overdetermined solutions it is possible to see numbers below 1.0. There are differences in the way
+		  the PRN's are presented which can effect the ability of some programs to display this data. For example,
+		  in the example shown below there are 5 satellites in the solution and the null fields are scattered indicating that the almanac
+		  would show satellites in the null positions that are not being used as part of this solution. Other receivers might output
+		  all of the satellites used at the beginning of the sentence with the null field all stacked up at the end. This difference accounts
+		  for some satellite display programs not always being able to display the satellites being tracked. Some units may show all satellites
+		  that have ephemeris data without regard to their use as part of the solution but this is non-standard.
+
+  	  	  $GPGSA,A,3,04,05,,09,12,,,24,,,,,2.5,1.3,2.1*39
+
+			Where:
+				 GSA      Satellite status
+				 A        Auto selection of 2D or 3D fix (M = manual)
+				 3        3D fix - values include: 1 = no fix
+												   2 = 2D fix
+												   3 = 3D fix
+				 04,05... PRNs of satellites used for fix (space for 12)
+				 2.5      PDOP (dilution of precision)
+				 1.3      Horizontal dilution of precision (HDOP)
+				 2.1      Vertical dilution of precision (VDOP)
+				 *39      the checksum data, always begins with *
+		*/
+		char auto_section = '?';
+		int fix_type = 0;
+		double pdop = 0.0, hdop = 99.9, vdop = 99.9;
+
+		auto_section = read_char();
+		fix_type = read_int();
+		// skip prn information
+		int i;
+		for(i = 0; i < 12; i++) {
+			read_float();
+		}
+
+		hdop        = read_float();
+		vdop        = read_float();
+
+		if (_parse_error) {
+			return 0;
+		}
+
+		if (hdop == 0.0) {
+			hdop = 99.9;
+		}
+		if (vdop == 0.0) {
+			vdop = 99.9;
+		}
+
+		_gps_position->fix_type = fix_type;
+		_gps_position->eph_m = hdop;
+		_gps_position->epv_m = vdop;
+
 		return 1;
 
 	} else if ((memcmp(_rx_buffer + 3, "GST,", 3) == 0) && (commas_count == 8)) {
