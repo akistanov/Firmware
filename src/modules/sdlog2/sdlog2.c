@@ -994,6 +994,7 @@ int sdlog2_thread_main(int argc, char *argv[])
 				log_msg.msg_type = LOG_GPS_MSG;
 				log_msg.body.log_GPS.gps_time = buf.gps_pos.time_gps_usec;
 				log_msg.body.log_GPS.fix_type = buf.gps_pos.fix_type;
+				log_msg.body.log_GPS.fix_quality = buf.gps_pos.fix_quality;
 				log_msg.body.log_GPS.eph = buf.gps_pos.eph_m;
 				log_msg.body.log_GPS.epv = buf.gps_pos.epv_m;
 				log_msg.body.log_GPS.lat = buf.gps_pos.lat;

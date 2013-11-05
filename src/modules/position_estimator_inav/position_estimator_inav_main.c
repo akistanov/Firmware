@@ -299,6 +299,8 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 	float sonar_prev = 0.0f;
 	hrt_abstime sonar_time = 0;
 
+	uint8_t gps_fix_quality = 0;
+
 	/* main loop */
 	struct pollfd fds[7] = {
 		{ .fd = parameter_update_sub, .events = POLLIN },
@@ -428,6 +430,11 @@ int position_estimator_inav_thread_main(int argc, char *argv[])
 			/* vehicle GPS position */
 			if (fds[6].revents & POLLIN) {
 				orb_copy(ORB_ID(vehicle_gps_position), vehicle_gps_position_sub, &gps);
+
+				if(gps.fix_quality != gps_fix_quality) {
+					mavlink_log_info(mavlink_fd, "[inav] fix quality update %d -> %d", gps_fix_quality, gps.fix_quality);
+					gps_fix_quality = gps.fix_quality;
+				}
 
 				if (gps.fix_type >= 3 && t < gps.timestamp_position + gps_timeout) {
 					/* initialize reference position if needed */

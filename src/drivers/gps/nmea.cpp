@@ -258,6 +258,7 @@ int NMEA::handle_message(int len)
 		_gps_position->lat = (int(lat * 0.01) + (lat * 0.01 - int(lat * 0.01)) * 100.0 / 60.0) * 10000000;
 		_gps_position->lon = (int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0) * 10000000;
 		_gps_position->alt = alt * 1000;
+		_gps_position->fix_quality = fix_quality;
 		//warnx((char *)_rx_buffer);
 		//warnx("lat: %d, lon: %d", _gps_position->lat, _gps_position->lon);
 
