@@ -63,6 +63,13 @@ class NMEA : public GPS_Helper
 	bool                  _parse_error; // parse error flag
 	char                 *_parse_pos; // parse position
 
+    int     _satellites_count; // Number of satellites info parsed.
+	uint8_t _satellites_visible;			/**< Number of satellites visible. */
+	uint8_t _satellite_prn[20]; 			/**< Global satellite ID */
+	uint8_t _satellite_elevation[20]; 		/**< Elevation (0: right on top of receiver, 90: on the horizon) of satellite */
+	uint8_t _satellite_azimuth[20];			/**< Direction of satellite, 0: 0 deg, 255: 360 deg. */
+	uint8_t _satellite_snr[20];			/**< Signal to noise ratio of satellite   */
+
 public:
 	NMEA(const int &fd, struct vehicle_gps_position_s *gps_position);
 	~NMEA();

@@ -57,6 +57,8 @@ NMEA::NMEA(const int &fd, struct vehicle_gps_position_s *gps_position):
 	decode_init();
 	_decode_state = NME_DECODE_UNINIT;
 	_rx_buffer_bytes = 0;
+	_satellites_count = 0;
+	_satellites_visible = 0;
 }
 
 NMEA::~NMEA()
@@ -183,8 +185,6 @@ int NMEA::handle_message(int len)
 
 	_parse_pos = (char *)(_rx_buffer + 6);
 	_parse_error = false;
-
-	//warnx((char *)_rx_buffer);
 
 	if ((memcmp(_rx_buffer + 3, "GGA,", 3) == 0) && (commas_count == 14)) {
 		/*
@@ -450,14 +450,13 @@ int NMEA::handle_message(int len)
 		*/
 // currently process only gps, because do not know what
 // Global satellite ID I should use for non GPS sats
-		bool bGPS = false;
 
-		if (memcmp(_rx_buffer, "$GP", 3) != 0)
-			return 0;
-		else
-			bGPS = true;
+		warnx((char *)_rx_buffer);
 
-		int all_msg_num, this_msg_num, tot_sv_visible;
+		bool first_part = (memcmp(_rx_buffer, "$GP", 3) == 0);
+        bool last_part = (memcmp(_rx_buffer, "$GL", 3) == 0);
+
+		int max_msg_num, this_msg_num, tot_sv_visible;
 		struct gsv_sat {
 			int prn;
 			int elevation;
@@ -466,50 +465,79 @@ int NMEA::handle_message(int len)
 		} sat[4];
 		memset(sat, 0, sizeof(sat));
 
-		all_msg_num = read_int();
+		max_msg_num = read_int();
 		this_msg_num = read_int();
 		tot_sv_visible = read_int();
 
 		if (_parse_error) {
+			warnx("parse error");
 			return 0;
 		}
 
-		if ((this_msg_num < 1) || (this_msg_num > all_msg_num)) {
+		if ((this_msg_num < 1) || (this_msg_num > max_msg_num)) {
 			return 0;
 		}
+		warnx("Read: %d, %d, %d", max_msg_num, this_msg_num, tot_sv_visible);
 
-		if ((this_msg_num == 0) && (bGPS == true)) {
-			memset(_gps_position->satellite_prn,      0, sizeof(_gps_position->satellite_prn));
-			memset(_gps_position->satellite_used,     0, sizeof(_gps_position->satellite_used));
-			memset(_gps_position->satellite_snr,      0, sizeof(_gps_position->satellite_snr));
-			memset(_gps_position->satellite_elevation, 0, sizeof(_gps_position->satellite_elevation));
-			memset(_gps_position->satellite_azimuth,  0, sizeof(_gps_position->satellite_azimuth));
+		if(first_part && (this_msg_num == 1)) {
+			warnx("Clear sat data");
+			// new satellites data
+			_satellites_count = 0;
+			_satellites_visible = 0;
 		}
 
-		int end = 4;
+		int sat_in_msg =  this_msg_num == max_msg_num ? tot_sv_visible - (this_msg_num - 1) * 4 : 4;
 
-		if (this_msg_num == all_msg_num) {
-			end =  tot_sv_visible - (this_msg_num - 1) * 4;
-			_gps_position->satellite_info_available = 1;
-			_gps_position->satellites_visible = tot_sv_visible;
-			_gps_position->timestamp_satellites = hrt_absolute_time();
-		}
+		warnx("sat_in_msg: %d", sat_in_msg);
 
-		for (int y = 0 ; y < end ; y++) {
-			sat[y].prn = read_int();
-			sat[y].elevation = read_int();
-			sat[y].azimuth = read_int();
-			sat[y].snr = read_int();
+		for (int i = 0 ; i < sat_in_msg ; i++) {
+			sat[i].prn = read_int();
+			sat[i].elevation = read_int();
+			sat[i].azimuth = read_int();
+			sat[i].snr = read_int();
 
 			if (_parse_error) {
+				warnx("parse error sat %d", i);
 				return 0;
 			}
+		}
 
-			_gps_position->satellite_prn[y + (this_msg_num - 1) * 4]       = sat[y].prn;
-			_gps_position->satellite_used[y + (this_msg_num - 1) * 4]      = ((sat[y].snr > 0) ? true : false);
-			_gps_position->satellite_snr[y + (this_msg_num - 1) * 4]       = sat[y].snr;
-			_gps_position->satellite_elevation[y + (this_msg_num - 1) * 4] = sat[y].elevation;
-			_gps_position->satellite_azimuth[y + (this_msg_num - 1) * 4]   = sat[y].azimuth;
+		for (int i = 0 ; i < sat_in_msg ; i++) {
+			_satellite_prn[_satellites_count + i] = sat[i].prn;
+			_satellite_elevation[_satellites_count + i] = sat[i].elevation;
+			_satellite_snr[_satellites_count + i] = sat[i].snr;
+			_satellite_azimuth[_satellites_count + i] = sat[i].azimuth;
+			if(sat[i].snr > 0) {
+				_satellites_visible++;
+			}
+		}
+
+		_satellites_count += sat_in_msg;
+
+		if(last_part && (this_msg_num == max_msg_num)) {
+			// satellites data read finished, lets publish it
+
+			warnx("Publish sat data: count=%d, visible=%d", _satellites_count, _satellites_visible);
+			for (int i = 0 ; i < _satellites_count ; i++) {
+				_gps_position->satellite_prn[i]       = _satellite_prn[i];
+				_gps_position->satellite_used[i]      = ((_satellite_snr[i] > 0) ? true : false);
+				_gps_position->satellite_snr[i]       = _satellite_snr[i];
+				_gps_position->satellite_elevation[i] = _satellite_elevation[i];
+				_gps_position->satellite_azimuth[i]   = _satellite_azimuth[i];
+			}
+
+			for (int i = _satellites_count; i < 20; i++) {
+				/* unused channels have to be set to zero for e.g. MAVLink */
+				_gps_position->satellite_prn[i] = 0;
+				_gps_position->satellite_used[i] = 0;
+				_gps_position->satellite_snr[i] = 0;
+				_gps_position->satellite_elevation[i] = 0;
+				_gps_position->satellite_azimuth[i] = 0;
+			}
+
+			_gps_position->satellite_info_available = true;
+			_gps_position->satellites_visible = _satellites_visible;
+			_gps_position->timestamp_satellites = hrt_absolute_time();
 		}
 
 	} else if ((memcmp(_rx_buffer + 3, "ZDA,", 3) == 0) && (commas_count == 6)) {
