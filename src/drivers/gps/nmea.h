@@ -63,7 +63,8 @@ class NMEA : public GPS_Helper
 	bool                  _parse_error; // parse error flag
 	char                 *_parse_pos; // parse position
 
-    int     _satellites_count; // Number of satellites info parsed.
+    bool	_gsv_in_progress;					// Indicates that gsv data parsing is in progress
+	int     _satellites_count; 				// Number of satellites info parsed.
 	uint8_t _satellites_visible;			/**< Number of satellites visible. */
 	uint8_t _satellite_prn[20]; 			/**< Global satellite ID */
 	uint8_t _satellite_elevation[20]; 		/**< Elevation (0: right on top of receiver, 90: on the horizon) of satellite */

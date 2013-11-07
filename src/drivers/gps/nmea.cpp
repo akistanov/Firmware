@@ -186,6 +186,8 @@ int NMEA::handle_message(int len)
 	_parse_pos = (char *)(_rx_buffer + 6);
 	_parse_error = false;
 
+	//warnx((char *)_rx_buffer);
+
 	if ((memcmp(_rx_buffer + 3, "GGA,", 3) == 0) && (commas_count == 14)) {
 		/*
 		  Time, position, and fix related data
@@ -259,15 +261,12 @@ int NMEA::handle_message(int len)
 		_gps_position->lon = (int(lon * 0.01) + (lon * 0.01 - int(lon * 0.01)) * 100.0 / 60.0) * 10000000;
 		_gps_position->alt = alt * 1000;
 		_gps_position->fix_quality = fix_quality;
-		//warnx((char *)_rx_buffer);
-		//warnx("lat: %d, lon: %d", _gps_position->lat, _gps_position->lon);
 
 		_rate_count_lat_lon++;
 
 		_gps_position->eph_m = hdop;
 		_gps_position->timestamp_position = hrt_absolute_time();
 
-		//warnx("lat: %d, lon: %d", _gps_position->lat, _gps_position->lon);
 		return 1;
 
 	} else if ((memcmp(_rx_buffer + 3, "GSA,", 3) == 0) && (commas_count == 17)) {
@@ -451,8 +450,6 @@ int NMEA::handle_message(int len)
 // currently process only gps, because do not know what
 // Global satellite ID I should use for non GPS sats
 
-		warnx((char *)_rx_buffer);
-
 		bool first_part = (memcmp(_rx_buffer, "$GP", 3) == 0);
         bool last_part = (memcmp(_rx_buffer, "$GL", 3) == 0);
 
@@ -470,25 +467,23 @@ int NMEA::handle_message(int len)
 		tot_sv_visible = read_int();
 
 		if (_parse_error) {
-			warnx("parse error");
 			return 0;
 		}
 
 		if ((this_msg_num < 1) || (this_msg_num > max_msg_num)) {
 			return 0;
 		}
-		warnx("Read: %d, %d, %d", max_msg_num, this_msg_num, tot_sv_visible);
 
 		if(first_part && (this_msg_num == 1)) {
-			warnx("Clear sat data");
 			// new satellites data
 			_satellites_count = 0;
 			_satellites_visible = 0;
+			_gsv_in_progress = true;
+		} else if(!_gsv_in_progress) {
+			return 0;
 		}
 
 		int sat_in_msg =  this_msg_num == max_msg_num ? tot_sv_visible - (this_msg_num - 1) * 4 : 4;
-
-		warnx("sat_in_msg: %d", sat_in_msg);
 
 		for (int i = 0 ; i < sat_in_msg ; i++) {
 			sat[i].prn = read_int();
@@ -497,7 +492,6 @@ int NMEA::handle_message(int len)
 			sat[i].snr = read_int();
 
 			if (_parse_error) {
-				warnx("parse error sat %d", i);
 				return 0;
 			}
 		}
@@ -517,7 +511,6 @@ int NMEA::handle_message(int len)
 		if(last_part && (this_msg_num == max_msg_num)) {
 			// satellites data read finished, lets publish it
 
-			warnx("Publish sat data: count=%d, visible=%d", _satellites_count, _satellites_visible);
 			for (int i = 0 ; i < _satellites_count ; i++) {
 				_gps_position->satellite_prn[i]       = _satellite_prn[i];
 				_gps_position->satellite_used[i]      = ((_satellite_snr[i] > 0) ? true : false);
@@ -538,6 +531,7 @@ int NMEA::handle_message(int len)
 			_gps_position->satellite_info_available = true;
 			_gps_position->satellites_visible = _satellites_visible;
 			_gps_position->timestamp_satellites = hrt_absolute_time();
+			_gsv_in_progress = false;
 		}
 
 	} else if ((memcmp(_rx_buffer + 3, "ZDA,", 3) == 0) && (commas_count == 6)) {
