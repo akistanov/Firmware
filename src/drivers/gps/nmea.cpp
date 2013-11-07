@@ -494,19 +494,24 @@ int NMEA::handle_message(int len)
 			if (_parse_error) {
 				return 0;
 			}
-		}
 
-		for (int i = 0 ; i < sat_in_msg ; i++) {
-			_satellite_prn[_satellites_count + i] = sat[i].prn;
-			_satellite_elevation[_satellites_count + i] = sat[i].elevation;
-			_satellite_snr[_satellites_count + i] = sat[i].snr;
-			_satellite_azimuth[_satellites_count + i] = sat[i].azimuth;
 			if(sat[i].snr > 0) {
 				_satellites_visible++;
 			}
 		}
 
-		_satellites_count += sat_in_msg;
+		int sat_to_publish = 20 - _satellites_count;
+		if(sat_in_msg < sat_to_publish) {
+			sat_to_publish = sat_in_msg;
+		}
+		for (int i = 0 ; i < sat_to_publish; i++) {
+			_satellite_prn[_satellites_count + i] = sat[i].prn;
+			_satellite_elevation[_satellites_count + i] = sat[i].elevation;
+			_satellite_snr[_satellites_count + i] = sat[i].snr;
+			_satellite_azimuth[_satellites_count + i] = sat[i].azimuth;
+		}
+
+		_satellites_count += sat_to_publish;
 
 		if(last_part && (this_msg_num == max_msg_num)) {
 			// satellites data read finished, lets publish it
